@@ -87,6 +87,12 @@
   <h2>Network</h2>
   <div id="net"></div>
 
+  <h2>Devices <span id="devcount" style="color:#475569"></span></h2>
+  <div id="devices"></div>
+
+  <h2>Recent joins</h2>
+  <div id="joins"></div>
+
   <h2>Services</h2>
   <div id="services"></div>
 
@@ -132,8 +138,8 @@ function setLive(on) {
 
 async function refresh() {
   try {
-    const [stats, cont, svc] = await Promise.all([
-      get('/api/stats'), get('/api/containers'), get('/api/services')
+    const [stats, cont, svc, lan] = await Promise.all([
+      get('/api/stats'), get('/api/containers'), get('/api/services'), get('/api/network')
     ]);
     setLive(true);
     $('cpu').textContent = stats.cpu_percent + '%';
@@ -161,6 +167,19 @@ async function refresh() {
     }
     $('net').innerHTML = nh || '<div class="row"><div class="meta">no interfaces</div></div>';
     prevNet = stats.net; prevTs = now;
+
+    // LAN devices + join history
+    const devs = (lan && lan.devices) || [];
+    const onlineCt = devs.filter(d => d.online).length;
+    $('devcount').textContent = '(' + onlineCt + ' online)';
+    $('devices').innerHTML = devs.map(d =>
+      `<div class="row"><div class="sdot ${d.online?'up':'down'}"></div><div><div class="name">${d.name}</div><div class="meta">${d.ip || 'no ip'} · ${d.mac}</div></div><div class="pill ${d.online?'up':'na'}">${d.online?'ONLINE':'OFFLINE'}</div></div>`
+    ).join('') || '<div class="row"><div class="meta">no devices seen yet</div></div>';
+
+    const evs = (lan && lan.events) || [];
+    $('joins').innerHTML = evs.map(e =>
+      `<div class="row"><div><div class="name">${e.name}</div><div class="meta">${e.ip} · ${e.mac}</div></div><div class="meta" style="margin-left:auto;flex:none">${new Date(e.ts*1000).toLocaleString()}</div></div>`
+    ).join('') || '<div class="row"><div class="meta">no joins recorded</div></div>';
 
     $('services').innerHTML = svc.services.map(s =>
       `<div class="row"><div class="sdot ${s.up?'up':'down'}"></div><div><div class="name">${s.name}</div><div class="meta">port ${s.port}</div></div><div class="pill ${s.up?'up':'down'}">${s.up ? (s.ms+' ms') : 'DOWN'}</div></div>`
