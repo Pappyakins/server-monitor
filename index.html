@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>rserver Monitor</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b1220">
+<link rel="apple-touch-icon" href="logo.png">
+<link rel="icon" href="logo.png">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: #0b1220; color: #e2e8f0; padding: 0 0 40px; }
+  header { position: sticky; top: 0; z-index: 10; background: #0b1220ee; backdrop-filter: blur(8px);
+           padding: 16px 20px 12px; border-bottom: 1px solid #1e293b;
+           display: flex; align-items: center; gap: 10px; }
+  header h1 { font-size: 20px; font-weight: 700; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #64748b; flex: none; }
+  .dot.on { background: #22c55e; box-shadow: 0 0 8px #22c55e; animation: pulse 2s infinite; }
+  .dot.off { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+  @keyframes pulse { 50% { opacity: .5; } }
+  #hostline { margin-left: auto; font-size: 12px; color: #64748b; }
+  #gear { background: none; border: none; color: #94a3b8; font-size: 22px; cursor: pointer; padding: 4px 8px; }
+  main { padding: 16px 16px 0; max-width: 640px; margin: 0 auto; }
+  .banner { display: none; background: #7f1d1d; border: 1px solid #ef4444; color: #fecaca;
+            border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; font-size: 14px; line-height: 1.5; }
+  .banner.show { display: block; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .card { background: #111c30; border: 1px solid #1e293b; border-radius: 14px; padding: 14px 16px; }
+  .card .label { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  .card .big { font-size: 26px; font-weight: 700; }
+  .card .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .bar { height: 6px; background: #1e293b; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 3px; background: #22c55e; transition: width .5s; }
+  .bar > div.warn { background: #f59e0b; } .bar > div.bad { background: #ef4444; }
+  h2 { font-size: 15px; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px;
+       margin: 20px 0 10px; }
+  .row { display: flex; align-items: center; gap: 10px; background: #111c30;
+         border: 1px solid #1e293b; border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+  .row .name { font-weight: 600; font-size: 15px; }
+  .row .meta { font-size: 12px; color: #64748b; margin-top: 2px; word-break: break-all; }
+  .pill { margin-left: auto; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; flex: none; }
+  .pill.up { background: #14532d; color: #4ade80; } .pill.down { background: #7f1d1d; color: #fca5a5; }
+  .pill.na { background: #1e293b; color: #94a3b8; }
+  .sdot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .sdot.up { background: #22c55e; } .sdot.down { background: #ef4444; }
+  #updated { text-align: center; color: #475569; font-size: 12px; margin-top: 20px; }
+  #settings { display: none; background: #111c30; border: 1px solid #1e293b; border-radius: 14px;
+              padding: 16px; margin-bottom: 16px; }
+  #settings.show { display: block; }
+  #settings label { font-size: 13px; color: #94a3b8; display: block; margin: 8px 0 4px; }
+  #settings input { width: 100%; background: #0b1220; border: 1px solid #334155; color: #e2e8f0;
+                    border-radius: 8px; padding: 10px 12px; font-size: 16px; }
+  #settings button { margin-top: 12px; width: 100%; background: #16a34a; color: #fff; border: none;
+                     border-radius: 10px; padding: 12px; font-size: 16px; font-weight: 700; cursor: pointer; }
+  .netrate { font-size: 13px; color: #94a3b8; } .netrate b { color: #e2e8f0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="dot" id="livedot"></div>
+  <h1>rserver</h1>
+  <span id="hostline"></span>
+  <button id="gear" aria-label="Settings">⚙</button>
+</header>
+<main>
+  <div class="banner" id="banner">Can't reach rserver. Make sure <b>Tailscale is connected</b> on this phone, then pull down or wait for retry.</div>
+
+  <div id="settings">
+    <label>Server host (Tailscale IP)</label>
+    <input id="inHost" inputmode="url" autocomplete="off">
+    <label>Port</label>
+    <input id="inPort" inputmode="numeric" autocomplete="off">
+    <button id="saveBtn">Save &amp; reconnect</button>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="label">CPU</div><div class="big" id="cpu">–</div><div class="bar"><div id="cpuBar"></div></div><div class="sub" id="load">–</div></div>
+    <div class="card"><div class="label">Memory</div><div class="big" id="mem">–</div><div class="bar"><div id="memBar"></div></div><div class="sub" id="memSub">–</div></div>
+    <div class="card"><div class="label">Disk</div><div class="big" id="disk">–</div><div class="bar"><div id="diskBar"></div></div><div class="sub" id="diskSub">–</div></div>
+    <div class="card"><div class="label">Temp</div><div class="big" id="temp">–</div><div class="sub" id="uptime">–</div></div>
+  </div>
+
+  <h2>Network</h2>
+  <div id="net"></div>
+
+  <h2>Services</h2>
+  <div id="services"></div>
+
+  <h2>Containers <span id="ccount" style="color:#475569"></span></h2>
+  <div id="containers"></div>
+
+  <div id="updated">–</div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let host = localStorage.getItem('sm_host') || '100.97.120.112';
+let port = localStorage.getItem('sm_port') || '7575';
+let prevNet = null, prevTs = 0;
+
+const base = () => `http://${host}:${port}`;
+function bar(el, pct) {
+  el.style.width = Math.min(100, pct) + '%';
+  el.className = pct >= 90 ? 'bad' : pct >= 75 ? 'warn' : '';
+}
+function fmtRate(bps) {
+  if (bps < 1024) return bps.toFixed(0) + ' B/s';
+  if (bps < 1048576) return (bps/1024).toFixed(1) + ' KB/s';
+  return (bps/1048576).toFixed(1) + ' MB/s';
+}
+
+async function get(path, timeoutMs=8000) {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), timeoutMs);
+  try {
+    const r = await fetch(base() + path, { signal: c.signal });
+    if (!r.ok) throw new Error('bad status');
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
+function setLive(on) {
+  $('livedot').className = 'dot ' + (on ? 'on' : 'off');
+  $('banner').classList.toggle('show', !on);
+  $('hostline').textContent = host + ':' + port;
+}
+
+async function refresh() {
+  try {
+    const [stats, cont, svc] = await Promise.all([
+      get('/api/stats'), get('/api/containers'), get('/api/services')
+    ]);
+    setLive(true);
+    $('cpu').textContent = stats.cpu_percent + '%';
+    bar($('cpuBar'), stats.cpu_percent);
+    $('load').textContent = 'load ' + stats.load.join(' · ');
+    $('mem').textContent = stats.memory.percent + '%';
+    bar($('memBar'), stats.memory.percent);
+    $('memSub').textContent = (stats.memory.used_mb/1024).toFixed(1) + ' / ' + (stats.memory.total_mb/1024).toFixed(1) + ' GB';
+    $('disk').textContent = stats.disk.percent + '%';
+    bar($('diskBar'), stats.disk.percent);
+    $('diskSub').textContent = stats.disk.used_gb + ' / ' + stats.disk.total_gb + ' GB';
+    $('temp').textContent = stats.temp_c != null ? stats.temp_c + '°C' : 'n/a';
+    $('uptime').textContent = 'up ' + stats.uptime.pretty;
+
+    // network rates from cumulative counters
+    const now = Date.now()/1000, dt = prevTs ? now - prevTs : 0;
+    let nh = '';
+    for (const [iface, v] of Object.entries(stats.net)) {
+      let rate = '';
+      if (prevNet && prevNet[iface] && dt > 0) {
+        const rx = (v.rx - prevNet[iface].rx)/dt, tx = (v.tx - prevNet[iface].tx)/dt;
+        if (rx >= 0 && tx >= 0) rate = ` <span class="netrate">↓ <b>${fmtRate(rx)}</b> ↑ <b>${fmtRate(tx)}</b></span>`;
+      }
+      nh += `<div class="row"><div><div class="name">${iface}</div></div><div style="margin-left:auto">${rate}</div></div>`;
+    }
+    $('net').innerHTML = nh || '<div class="row"><div class="meta">no interfaces</div></div>';
+    prevNet = stats.net; prevTs = now;
+
+    $('services').innerHTML = svc.services.map(s =>
+      `<div class="row"><div class="sdot ${s.up?'up':'down'}"></div><div><div class="name">${s.name}</div><div class="meta">port ${s.port}</div></div><div class="pill ${s.up?'up':'down'}">${s.up ? (s.ms+' ms') : 'DOWN'}</div></div>`
+    ).join('');
+
+    const cs = cont.containers;
+    if (cs.error) {
+      $('containers').innerHTML = `<div class="row"><div class="meta">${cs.error}</div></div>`;
+      $('ccount').textContent = '';
+    } else {
+      $('ccount').textContent = '(' + cs.length + ')';
+      $('containers').innerHTML = cs.map(c =>
+        `<div class="row"><div class="sdot ${c.state==='running'?'up':'down'}"></div><div><div class="name">${c.name||'?'}</div><div class="meta">${c.image||''} · ${c.status||c.state||''}</div></div><div class="pill ${c.state==='running'?'up':'na'}">${c.state==='running'?'UP':(c.state||'?').toUpperCase()}</div></div>`
+      ).join('');
+    }
+    $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    setLive(false);
+  }
+}
+
+$('gear').onclick = () => {
+  $('inHost').value = host; $('inPort').value = port;
+  $('settings').classList.toggle('show');
+};
+$('saveBtn').onclick = () => {
+  host = $('inHost').value.trim() || host;
+  port = $('inPort').value.trim() || port;
+  localStorage.setItem('sm_host', host);
+  localStorage.setItem('sm_port', port);
+  $('settings').classList.remove('show');
+  prevNet = null; prevTs = 0;
+  refresh();
+};
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
