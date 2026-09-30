@@ -99,6 +99,9 @@
   <h2>Containers <span id="ccount" style="color:#475569"></span></h2>
   <div id="containers"></div>
 
+  <h2>Photo uploads</h2>
+  <div id="uploads"></div>
+
   <div id="updated">–</div>
 <div class="jc-foot">Powered by @jakinsCraft</div>
 </main>
@@ -138,8 +141,9 @@ function setLive(on) {
 
 async function refresh() {
   try {
-    const [stats, cont, svc, lan] = await Promise.all([
-      get('/api/stats'), get('/api/containers'), get('/api/services'), get('/api/network')
+    const [stats, cont, svc, lan, ups] = await Promise.all([
+      get('/api/stats'), get('/api/containers'), get('/api/services'), get('/api/network'),
+      get('/api/uploads').catch(() => null)
     ]);
     setLive(true);
     $('cpu').textContent = stats.cpu_percent + '%';
@@ -196,9 +200,44 @@ async function refresh() {
       ).join('');
     }
     $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    renderUploads(ups);
   } catch (e) {
     setLive(false);
   }
+}
+
+function renderUploads(ups) {
+  const el = $('uploads');
+  if (!ups || ups.error) {
+    el.innerHTML = '<div class="row"><div class="meta">upload stats unavailable</div></div>';
+    return;
+  }
+  const t = ups.trem, a = ups.aio;
+  const dstr = iso => { try { return new Date(iso).toLocaleDateString(); } catch (e) { return ''; } };
+  const pendRows = t.pending.map(p =>
+    `<div class="row"><div><div class="name">${p.name}</div><div class="meta">${p.birthday}${p.in_days < 9000 ? ' · in ' + p.in_days + 'd' : ''}</div></div></div>`
+  );
+  const showN = 10;
+  el.innerHTML =
+    `<div class="grid">
+       <div class="card"><div class="label">TREM photos</div><div class="big">${t.uploaded}<span style="font-size:14px;color:#64748b">/${t.total}</span></div><div class="bar"><div style="width:${t.pct}%"></div></div><div class="sub">${t.pct}% coverage</div></div>
+       <div class="card"><div class="label">AIO signups</div><div class="big">${a.total}</div><div class="sub">${a.today} today</div></div>
+     </div>` +
+    (t.recent.length ? '<h2 style="margin-top:4px">Latest TREM uploads</h2>' +
+      t.recent.map(r => `<div class="row"><div><div class="name">${r.name}</div><div class="meta">${dstr(r.at)}</div></div></div>`).join('') : '') +
+    (a.recent.length ? '<h2 style="margin-top:4px">Latest AIO signups</h2>' +
+      a.recent.map(r => `<div class="row"><div><div class="name">${r.name}${r.city ? ' · ' + r.city : ''}</div><div class="meta">${r.at ? dstr(r.at) : ''}</div></div></div>`).join('') : '') +
+    `<h2 style="margin-top:4px">Waiting on photos (${t.pending.length})</h2>
+     <div id="pendList">${pendRows.slice(0, showN).join('')}</div>` +
+    (t.pending.length > showN
+      ? `<div class="row" id="pendMore" style="justify-content:center;cursor:pointer"><div class="meta">show all ${t.pending.length}…</div></div>`
+      : '') +
+    (t.pending.length === 0 ? '<div class="row"><div class="meta">Everyone has uploaded 🎉</div></div>' : '');
+  const more = $('pendMore');
+  if (more) more.onclick = () => {
+    $('pendList').innerHTML = pendRows.join('');
+    more.remove();
+  };
 }
 
 $('gear').onclick = () => {
